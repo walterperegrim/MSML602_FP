@@ -5,7 +5,7 @@ import warnings
 warnings.filterwarnings("ignore")
 import io
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from helper import get_brian2_preds, scrape, create_figure
+from helper import  get_snnTorch_preds, scrape, create_figure
 
 
 app = Flask(__name__, template_folder='templates')
@@ -13,17 +13,11 @@ scheduler = APScheduler()
 scrape_every = 30
 
 #hardcoded yfinance request params
-stock_name = '^DJI'
-start_date =  datetime.today() - timedelta(days=100) 
-end_date = datetime.today() - timedelta(days=5)
-pred_end_date = datetime.today() + timedelta(days=1)
-start_date = start_date.strftime('%Y-%m-%d')
-end_date = end_date.strftime('%Y-%m-%d')
-pred_end_date = pred_end_date.strftime('%Y-%m-%d')
+stock_name = 'SBUX'
 interval='1d'
-
-
-
+start_date='2019-12-11'
+end_date='2020-09-24'
+pred_end_date='2020-12-10'
 
 #plots ticker history
 @app.route('/plot.png', methods=("POST", "GET"))
@@ -32,8 +26,9 @@ def plot_png():
     df = scrape(stock_name, start_date, pred_end_date, interval)
     with app.app_context():
         print('plotted')
-        pdf, loss = get_brian2_preds(df['Adj Close'], end_date, pred_end_date)
-        fig = create_figure(pdf, col='pred')
+        pdf, loss = get_snnTorch_preds(df)
+        fig = create_figure(pdf, col='forecast_vol')
+        fig.savefig('ticker_forecasts.png')
         output = io.BytesIO()
         FigureCanvas(fig).print_png(output)
         return Response(output.getvalue(), mimetype='image/png')
@@ -47,8 +42,9 @@ def plot_png2():
     with app.app_context():
         data = request.form.get("req", "field: req was not provided")
         print('plotted 2')
-        ndf = df.loc[:end_date]
-        fig = create_figure(ndf, col='Adj Close')
+        ndf = df.loc[:pred_end_date]
+        fig = create_figure(ndf[['Volume']], col='ground_vol')
+        fig.savefig('ticker_history.png')
         output = io.BytesIO()
         FigureCanvas(fig).print_png(output)
         return Response(output.getvalue(), mimetype='image/png')
@@ -60,7 +56,6 @@ def plot_png2():
 def scheduleTask():
     df = scrape(stock_name, start_date, pred_end_date, interval)
     with app.app_context():
-        pdf, loss = get_brian2_preds(df['Adj Close'], end_date, pred_end_date)
         df['Date'] = df.index
         df.reset_index(drop=True, inplace=True)
         df = df[['Date','Open','High','Low','Close','Adj Close','Volume']].sort_values(by='Date', ascending=False)
@@ -74,3 +69,12 @@ if __name__ == "__main__":
     app.run()
 
     #https://finance.yahoo.com/chart/CL%3DF
+
+
+
+    '''start_date =  datetime.today() - timedelta(days=100) 
+    end_date = datetime.today() - timedelta(days=5)
+    pred_end_date = datetime.today() + timedelta(days=1)
+    start_date = start_date.strftime('%Y-%m-%d')
+    end_date = end_date.strftime('%Y-%m-%d')
+    pred_end_date = pred_end_date.strftime('%Y-%m-%d')'''
