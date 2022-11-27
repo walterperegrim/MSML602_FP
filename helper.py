@@ -14,14 +14,17 @@ from torch.autograd import Variable
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from datetime import datetime
 import os
+import requests as requests
+
 
 spike_grad_lstm = surrogate.straight_through_estimator()
-num_epochs = 1000 #1000 epochs
+num_epochs = 600 #1000 epochs
 learning_rate = 0.001 #0.001 lr
 input_size = 5 #number of features
 hidden_size = 2 #number of features in hidden state
 num_layers = 1 #number of stacked lstm layers
 num_classes = 1 #number of output classes
+
 
 
 class LSTM(nn.Module):
@@ -84,18 +87,19 @@ class SLSTM(nn.Module):
         return torch.stack(out_rec)
 
 
-def get_snnTorch_preds(df, train=False):
+def get_snnTorch_preds(df, training=False):
+    splt = int(df.shape[0] * 0.8)
     X = df.iloc[:, :-1]
-    y = df.iloc[:, 5:6]
-
+    y = df.iloc[:, -1:]
     mm = MinMaxScaler()
     ss = StandardScaler()
     X_ss = ss.fit_transform(X)
     y_mm = mm.fit_transform(y)
-    X_train = X_ss[:200, :]
-    X_test = X_ss[200:, :]
-    y_train = y_mm[:200, :]
-    y_test = y_mm[200:, :]
+
+    X_train = X_ss[:splt, :]
+    X_test = X_ss[splt:, :]
+    y_train = y_mm[:splt, :]
+    y_test = y_mm[splt:, :]
 
     X_train_tensors = Variable(torch.Tensor(X_train))
     X_test_tensors = Variable(torch.Tensor(X_test))
@@ -112,7 +116,7 @@ def get_snnTorch_preds(df, train=False):
     criterion = torch.nn.MSELoss()
     scriterion = torch.nn.MSELoss()
 
-    if not train and os.path.exists('model/lstm.pt'):
+    if not training and os.path.exists('model/lstm.pt'):
         lstm.load_state_dict(torch.load('model/lstm.pt'))
         slstm.load_state_dict(torch.load('model/slstm.pt'))
     else:
@@ -141,29 +145,22 @@ def get_snnTorch_preds(df, train=False):
     sloss = scriterion(syhat, y_test_tensors)
     yhat = yhat.flatten().detach().numpy()
     syhat = syhat.flatten().detach().numpy()
+    pdf = pd.DataFrame({'ground_vol': ytst, 'lstm_vol': yhat, 'slstm_vol': syhat}, index=df.index.tolist()[splt:])
 
-    pdf = pd.DataFrame({'ground_vol': ytst, 'lstm_vol': yhat, 'slstm_vol': syhat}, index=df.index.tolist()[200:])
     torch.save(lstm.state_dict(), 'model/lstm.pt')
     torch.save(slstm.state_dict(), 'model/slstm.pt')
     return pdf, (loss,sloss)
 
 
-
-def scrape(stock_name, start_date, pred_end_date, interval):
-    prices = yf.download(tickers=stock_name, start=start_date, end=pred_end_date, interval=interval).round(3)
-    return prices
-
-
-
-def create_figure(pdf, col):
+def create_figure(pdf, col, title):
     ax = pdf.plot(figsize=(16,8))
     ax.set_ylabel('Volume')
     plt.sca(ax)
     if col=='ground_vol':
         plt.axvline(x = datetime.strptime('2020-09-24', '%Y-%m-%d').date(), c='r', linestyle='--') #size of the training set
-    plt.title('Time-Series Prediction')
+    plt.title(title)
     plt.grid()
-    
+    plt.close()
     fig = ax.get_figure()
     return fig
 

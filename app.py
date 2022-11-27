@@ -1,33 +1,41 @@
-from flask import Flask, request, render_template, Response
+from flask import Flask, request, render_template, Response, send_file
 from flask_apscheduler import APScheduler
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings("ignore")
 import io
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from helper import  get_snnTorch_preds, scrape, create_figure
-
+from helper import get_snnTorch_preds, create_figure
+from scraper import Scraper
+import base64
+from PIL import Image
+import numpy as np
 
 app = Flask(__name__, template_folder='templates')
 scheduler = APScheduler()
 scrape_every = 30
 
-#hardcoded yfinance request params
-stock_name = 'SBUX'
+ticks = 'msft aapl goog'
+cols = ['Open','High','Low','Close','Adj Close','Volume']
+sc = Scraper()
+sc.set_tickers(ticks)
+sc.set_cols(cols)
+
 interval='1d'
 start_date='2019-12-11'
 end_date='2020-09-24'
 pred_end_date='2020-12-10'
 
+
+
 #plots ticker history
-@app.route('/plot.png', methods=("POST", "GET"))
-@scheduler.task(id = 'Plot PNG', trigger="interval", seconds=scrape_every)
-def plot_png():
-    df = scrape(stock_name, start_date, pred_end_date, interval)
+@app.route('/image.png', methods=("POST", "GET"))
+@scheduler.task(id = 'image', trigger="interval", seconds=scrape_every)
+def image():
+    df = sc.get_ticker_hist(sc._rand, start=start_date, end=pred_end_date, interval=interval)
     with app.app_context():
-        print('plotted')
         pdf, loss = get_snnTorch_preds(df)
-        fig = create_figure(pdf, col='forecast_vol')
+        fig = create_figure(pdf, col='forecast_vol', title=sc._rand)
         fig.savefig('ticker_forecasts.png')
         output = io.BytesIO()
         FigureCanvas(fig).print_png(output)
@@ -35,30 +43,31 @@ def plot_png():
 
 
 #plots predicted ticker prices
-@app.route('/plot2.png', methods=("POST", "GET"))
-@scheduler.task(id = 'Plot PNG 2', trigger="interval", seconds=scrape_every)
-def plot_png2():
-    df = scrape(stock_name, start_date, pred_end_date, interval)
+@app.route('/image2.png', methods=("POST", "GET"))
+@scheduler.task(id = 'image2', trigger="interval", seconds=scrape_every)
+def image2():
+    df = sc.get_ticker_hist(sc._rand, start=start_date, end=pred_end_date, interval=interval)
     with app.app_context():
-        data = request.form.get("req", "field: req was not provided")
-        print('plotted 2')
         ndf = df.loc[:pred_end_date]
-        fig = create_figure(ndf[['Volume']], col='ground_vol')
+        fig = create_figure(ndf[['Volume']], col='ground_vol', title=sc._rand)
         fig.savefig('ticker_history.png')
         output = io.BytesIO()
         FigureCanvas(fig).print_png(output)
         return Response(output.getvalue(), mimetype='image/png')
 
 
+
 #posts ticker history as table in flask app
 @app.route('/', methods=("POST", "GET"))
 @scheduler.task(id = 'Scheduled Task', trigger="interval", seconds=scrape_every)
 def scheduleTask():
-    df = scrape(stock_name, start_date, pred_end_date, interval)
+    sc.rand_tick()
+    print(sc._rand)
+    df = sc.get_ticker_hist(sc._rand, start=start_date, end=pred_end_date, interval=interval)
     with app.app_context():
         df['Date'] = df.index
         df.reset_index(drop=True, inplace=True)
-        df = df[['Date','Open','High','Low','Close','Adj Close','Volume']].sort_values(by='Date', ascending=False)
+        df = df[['Date',*cols]].sort_values(by='Date', ascending=False)
         return render_template('simple.html', column_names=df.columns.values, row_data=list(df.values.tolist()), zip=zip)
 
 
@@ -67,14 +76,3 @@ if __name__ == "__main__":
     scheduler.init_app(app)
     scheduler.start()
     app.run()
-
-    #https://finance.yahoo.com/chart/CL%3DF
-
-
-
-    '''start_date =  datetime.today() - timedelta(days=100) 
-    end_date = datetime.today() - timedelta(days=5)
-    pred_end_date = datetime.today() + timedelta(days=1)
-    start_date = start_date.strftime('%Y-%m-%d')
-    end_date = end_date.strftime('%Y-%m-%d')
-    pred_end_date = pred_end_date.strftime('%Y-%m-%d')'''
