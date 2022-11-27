@@ -7,13 +7,11 @@ import io
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from helper import get_snnTorch_preds, create_figure
 from scraper import Scraper
-import base64
-from PIL import Image
 import numpy as np
 
 app = Flask(__name__, template_folder='templates')
 scheduler = APScheduler()
-scrape_every = 30
+scrape_every = 60
 
 ticks = 'msft aapl goog'
 cols = ['Open','High','Low','Close','Adj Close','Volume']

@@ -17,14 +17,12 @@ import os
 import requests as requests
 
 
-spike_grad_lstm = surrogate.straight_through_estimator()
-num_epochs = 600 #1000 epochs
+num_epochs = 900 #1000 epochs
 learning_rate = 0.001 #0.001 lr
 input_size = 5 #number of features
 hidden_size = 2 #number of features in hidden state
 num_layers = 1 #number of stacked lstm layers
 num_classes = 1 #number of output classes
-
 
 
 class LSTM(nn.Module):
@@ -54,6 +52,28 @@ class LSTM(nn.Module):
         return out
 
 
+class CustomGradient(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input_):
+        out = (input_ > 0).float()
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        grad_input = grad_output.clone()
+        return grad_input
+
+
+def custom_gradient():
+    """Straight Through Estimator surrogate gradient enclosed with a parameterized slope."""
+    def inner(x):
+        return CustomGradient.apply(x)
+    return inner
+
+
+
+spike_grad_custom = custom_gradient()
+
 class SLSTM(nn.Module):
     def __init__(self, num_classes, input_size, hidden_size, num_layers, seq_length):
         super(SLSTM, self).__init__()
@@ -63,7 +83,7 @@ class SLSTM(nn.Module):
         self.hidden_size = hidden_size #hidden state
         self.seq_length = seq_length #sequence length
 
-        self.slstm = snn.SLSTM(input_size=input_size, hidden_size=hidden_size, spike_grad=spike_grad_lstm) #lstm
+        self.slstm = snn.SLSTM(input_size=input_size, hidden_size=hidden_size, spike_grad=spike_grad_custom) #lstm
         self.fc_1 =  nn.Linear(hidden_size, 128) #fully connected 1
         self.fc = nn.Linear(128, num_classes) #fully connected last layer
         self.relu = nn.ReLU()
